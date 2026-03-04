@@ -1,5 +1,6 @@
 import numpy as np
 
+
 class NeuralLayer:
     def __init__(self, input_dim, output_dim, weight_init="xavier"):
         self.input_dim = input_dim
