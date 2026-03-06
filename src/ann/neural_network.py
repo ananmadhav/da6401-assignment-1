@@ -1,54 +1,31 @@
 import numpy as np
-from .neural_layer import NeuralLayer
-from .activations import ReLU, Sigmoid, Tanh
-from .objective_functions import MeanSquaredError, CrossEntropy
-from .optimizers import SGD  
+from ann.neural_layer import NeuralLayer
+from ann.objective_functions import CrossEntropyLoss, MSELoss
 
 
 class NeuralNetwork:
-
     def __init__(self, cli_args):
         self.layers = []
 
-        input_size = 784   
-        output_size = 10   
-
-        hidden_sizes = cli_args.hidden_size
+        input_dim = 784
+        hidden_sizes = cli_args.hidden_layers
         activation = cli_args.activation
-        weight_init = cli_args.weight_init
+        weight_init = getattr(cli_args, "weight_init", "xavier")
 
-        if activation == "relu":
-            activation_class = ReLU
-        elif activation == "sigmoid":
-            activation_class = Sigmoid
-        elif activation == "tanh":
-            activation_class = Tanh
+        prev_dim = input_dim
+
+        for h in hidden_sizes:
+            layer = NeuralLayer(prev_dim, h, activation=activation, weight_init=weight_init)
+            self.layers.append(layer)
+            prev_dim = h
+
+        self.layers.append(NeuralLayer(prev_dim, 10, activation=None, weight_init=weight_init))
+        self.learning_rate = cli_args.learning_rate
+
+        if cli_args.loss == "cross_entropy":
+            self.loss_fn = CrossEntropyLoss()
         else:
-            raise ValueError("Unsupported activation")
-
-        prev_size = input_size
-
-        for size in hidden_sizes:
-            self.layers.append(
-                NeuralLayer(prev_size, size, weight_init)
-            )
-            self.layers.append(
-                activation_class()
-            )
-            prev_size = size
-
-        self.layers.append(
-            NeuralLayer(prev_size, output_size, weight_init)
-        )
-
-        if cli_args.loss == "mse":
-            self.loss_fn = MeanSquaredError()
-        elif cli_args.loss == "cross_entropy":
-            self.loss_fn = CrossEntropy()
-        else:
-            raise ValueError("Unsupported loss")
-
-        self.optimizer = SGD(cli_args.learning_rate)
+            self.loss_fn = MSELoss()
 
 
     def forward(self, X):
@@ -56,60 +33,72 @@ class NeuralNetwork:
             X = layer.forward(X)
         return X
 
+
     def backward(self, y_true, logits):
-        loss = self.loss_fn.forward(logits, y_true)
         d_out = self.loss_fn.backward()
+        grad_W_list = []
+        grad_b_list = []
 
         for layer in reversed(self.layers):
             d_out = layer.backward(d_out)
+            grad_W_list.append(layer.grad_W)
+            grad_b_list.append(layer.grad_b)
 
-        return loss
+        self.grad_W = np.array(grad_W_list, dtype=object)
+        self.grad_b = np.array(grad_b_list, dtype=object)
+        return self.grad_W, self.grad_b
+
 
     def update_weights(self):
-        trainable_layers = [
-            layer for layer in self.layers
-            if isinstance(layer, NeuralLayer)
-        ]
-        self.optimizer.step(trainable_layers)
+        for layer in self.layers:
+            layer.W -= self.learning_rate * layer.grad_W
+            layer.b -= self.learning_rate * layer.grad_b
 
 
-    def train(self, X_train, y_train, epochs, batch_size):
+    def train(self, X_train, y_train, epochs=1, batch_size=32):
         n = X_train.shape[0]
 
         for epoch in range(epochs):
-            permutation = np.random.permutation(n)
-            X_train = X_train[permutation]
-            y_train = y_train[permutation]
-
-            epoch_loss = 0
+            perm = np.random.permutation(n)
+            X_train = X_train[perm]
+            y_train = y_train[perm]
 
             for i in range(0, n, batch_size):
-
-                X_batch = X_train[i:i+batch_size]
-                y_batch = y_train[i:i+batch_size]
+                X_batch = X_train[i:i + batch_size]
+                y_batch = y_train[i:i + batch_size]
 
                 logits = self.forward(X_batch)
-                loss = self.backward(y_batch, logits)
 
+                loss = self.loss_fn.forward(logits, y_batch)
+
+                self.backward(y_batch, logits)
                 self.update_weights()
-                epoch_loss += loss * X_batch.shape[0]
-            epoch_loss /= n
+            print(f"Epoch {epoch+1}/{epochs} completed. Loss: {loss}")
 
-            print(f"Epoch {epoch+1}, Loss: {epoch_loss:.4f}")
 
     def evaluate(self, X, y):
         logits = self.forward(X)
+        preds = np.argmax(logits, axis=1)
 
-        if isinstance(self.loss_fn, CrossEntropy):
-            logits_shifted = logits - np.max(logits, axis=1, keepdims=True)
-            exp_logits = np.exp(logits_shifted)
-            probs = exp_logits / np.sum(exp_logits, axis=1, keepdims=True)
-            predictions = np.argmax(probs, axis=1)
-        else:
-            predictions = np.argmax(logits, axis=1)
+        acc = np.mean(preds == y)
+        return acc
 
-        true_labels = np.argmax(y, axis=1)
 
-        accuracy = np.mean(predictions == true_labels)
+    def get_weights(self):
+        d = {}
+        for i, layer in enumerate(self.layers):
+            d[f"W{i}"] = layer.W.copy()
+            d[f"b{i}"] = layer.b.copy()
+        return d
 
-        return accuracy
+
+    def set_weights(self, weight_dict):
+        for i, layer in enumerate(self.layers):
+            w_key = f"W{i}"
+            b_key = f"b{i}"
+
+            if w_key in weight_dict:
+                layer.W = weight_dict[w_key].copy()
+
+            if b_key in weight_dict:
+                layer.b = weight_dict[b_key].copy()
