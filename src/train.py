@@ -43,7 +43,6 @@ def parse_arguments():
 
 
 def load_dataset(dataset):
-
     if dataset == "mnist":
         (X_train, y_train), (X_test, y_test) = mnist.load_data()
     else:
@@ -60,10 +59,9 @@ def load_dataset(dataset):
 
 def main():
     args = parse_arguments()
-
     wandb.init(project=args.wandb_project, config=vars(args))
-    print("Loading dataset...")
 
+    print("Loading dataset...")
     X_train, y_train, X_test, y_test = load_dataset(args.dataset)
     print("Creating model...")
 
@@ -73,6 +71,8 @@ def main():
     model.train(
         X_train,
         y_train,
+        X_test,   # validation data
+        y_test,
         epochs=args.epochs,
         batch_size=args.batch_size
     )
@@ -87,6 +87,7 @@ def main():
 
     best_weights = model.get_weights()
     np.save(args.model_save_path, best_weights)
+
     print("Training complete.")
 
 

@@ -54,26 +54,50 @@ class NeuralNetwork:
             layer.b -= self.learning_rate * layer.grad_b
 
 
-    def train(self, X_train, y_train, epochs=1, batch_size=32):
-        n = X_train.shape[0]
+    def train(self, X_train, y_train, X_val, y_val, epochs=1, batch_size=32):
+
+        n_samples = X_train.shape[0]
 
         for epoch in range(epochs):
-            perm = np.random.permutation(n)
-            X_train = X_train[perm]
-            y_train = y_train[perm]
 
-            for i in range(0, n, batch_size):
-                X_batch = X_train[i:i + batch_size]
-                y_batch = y_train[i:i + batch_size]
+            indices = np.random.permutation(n_samples)
+            X_train = X_train[indices]
+            y_train = y_train[indices]
+
+            epoch_loss = 0
+
+            for start in range(0, n_samples, batch_size):
+
+                end = start + batch_size
+
+                X_batch = X_train[start:end]
+                y_batch = y_train[start:end]
 
                 logits = self.forward(X_batch)
 
-                loss = self.loss_fn.forward(logits, y_batch)
+                y_onehot = np.zeros((y_batch.size, logits.shape[1]))
+                y_onehot[np.arange(y_batch.size), y_batch] = 1
 
-                self.backward(y_batch, logits)
+                loss = -np.sum(y_onehot * np.log(logits + 1e-8)) / y_batch.size
+                epoch_loss += loss
+
+                grad_W, grad_b = self.backward(y_onehot, logits)
+
                 self.update_weights()
-            print(f"Epoch {epoch+1}/{epochs} completed. Loss: {loss}")
 
+            epoch_loss /= (n_samples // batch_size)
+
+            val_acc = self.evaluate(X_val, y_val)
+
+            print(
+                f"Epoch {epoch+1}/{epochs} - Loss: {epoch_loss:.4f} - Val Accuracy: {val_acc:.4f}"
+            )
+
+            import wandb
+            wandb.log({
+                "train_loss": epoch_loss,
+                "val_accuracy": val_acc
+            })
 
     def evaluate(self, X, y):
         logits = self.forward(X)
