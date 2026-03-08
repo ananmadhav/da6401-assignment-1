@@ -1,0 +1,11 @@
+{
+  "dataset": "mnist",
+  "epochs": 30,
+  "batch_size": 32,
+  "learning_rate": 0.01,
+  "optimizer": "momentum",
+  "hidden_layers": [128, 64],
+  "activation": "tanh",
+  "loss": "cross_entropy",
+  "weight_init": "xavier"
+}
